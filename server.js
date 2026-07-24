@@ -2,7 +2,6 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const admin = require('firebase-admin');
 const path = require('path');
 require('dotenv').config();
@@ -27,13 +26,6 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==================== RATE LIMITING ====================
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100
-});
-app.use('/api/', limiter);
-
 // ==================== FIREBASE INITIALIZATION ====================
 let firebaseInitialized = false;
 let db = null;
@@ -55,33 +47,32 @@ try {
 }
 
 // ==================== AUTH SERVICE ====================
-class AuthService {
-  static async validateCredentials(username, password) {
+const AuthService = {
+  validateCredentials: async (username, password) => {
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';
     const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
-    
     return username === adminUsername && password === adminPassword;
-  }
+  },
 
-  static generateToken(username) {
+  generateToken: (username) => {
     const secret = process.env.JWT_SECRET || 'default-secret-key-change-this';
     return jwt.sign(
       { username, role: 'admin' },
       secret,
       { expiresIn: '24h' }
     );
-  }
+  },
 
-  static verifyToken(token) {
+  verifyToken: (token) => {
     try {
       const secret = process.env.JWT_SECRET || 'default-secret-key-change-this';
       return jwt.verify(token, secret);
     } catch (error) {
       return null;
     }
-  }
+  },
 
-  static authenticate(req, res, next) {
+  authenticate: (req, res, next) => {
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -89,7 +80,7 @@ class AuthService {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = this.verifyToken(token);
+    const decoded = AuthService.verifyToken(token);
     
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -98,11 +89,11 @@ class AuthService {
     req.user = decoded;
     next();
   }
-}
+};
 
 // ==================== USER SERVICE ====================
-class UserService {
-  static async getAllUsers() {
+const UserService = {
+  getAllUsers: async () => {
     try {
       if (!firebaseInitialized || !db) {
         return { users: [], total: 0, activeDevices: 0 };
@@ -126,11 +117,11 @@ class UserService {
       return { users: [], total: 0, activeDevices: 0 };
     }
   }
-}
+};
 
 // ==================== NOTIFICATION SERVICE ====================
-class NotificationService {
-  static async getAllNotifications() {
+const NotificationService = {
+  getAllNotifications: async () => {
     try {
       if (!firebaseInitialized || !db) {
         return { notifications: [], total: 0, scheduled: 0, sent: 0, pending: 0 };
@@ -163,9 +154,9 @@ class NotificationService {
       console.error('Error fetching notifications:', error);
       return { notifications: [], total: 0, scheduled: 0, sent: 0, pending: 0 };
     }
-  }
+  },
 
-  static async createNotification(notificationData) {
+  createNotification: async (notificationData) => {
     try {
       if (!firebaseInitialized || !db) {
         throw new Error('Firebase not initialized');
@@ -190,9 +181,9 @@ class NotificationService {
       console.error('Error creating notification:', error);
       throw error;
     }
-  }
+  },
 
-  static async sendNotification(notificationId) {
+  sendNotification: async (notificationId) => {
     try {
       if (!firebaseInitialized || !db) {
         throw new Error('Firebase not initialized');
@@ -266,12 +257,12 @@ class NotificationService {
       throw error;
     }
   }
-}
+};
 
 // ==================== API ROUTES ====================
 
 // Auth Routes
-app.post('/api/auth/login', limiter, async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     
@@ -388,17 +379,14 @@ app.post('/api/notifications/:id/send', AuthService.authenticate, async (req, re
 });
 
 // ==================== SERVE HTML PAGES ====================
-// Root redirect to login
 app.get('/', (req, res) => {
-  res.redirect('/login');
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Serve login page
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Serve dashboard
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
@@ -406,7 +394,7 @@ app.get('/dashboard', (req, res) => {
 // ==================== 404 HANDLER ====================
 app.use((req, res) => {
   if (req.accepts('html')) {
-    return res.redirect('/login');
+    return res.sendFile(path.join(__dirname, 'public', 'login.html'));
   }
   res.status(404).json({ 
     error: 'Not Found',
