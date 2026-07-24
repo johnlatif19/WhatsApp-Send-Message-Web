@@ -378,6 +378,71 @@ app.post('/api/notifications/:id/send', AuthService.authenticate, async (req, re
   }
 });
 
+// DELETE notification
+app.delete('/api/notifications/:id', AuthService.authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!firebaseInitialized || !db) {
+      throw new Error('Firebase not initialized');
+    }
+    await db.collection('notifications').doc(id).delete();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting notification:', error);
+    res.status(500).json({ error: 'Failed to delete notification' });
+  }
+});
+
+// GET single notification
+app.get('/api/notifications/:id', AuthService.authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!firebaseInitialized || !db) {
+      throw new Error('Firebase not initialized');
+    }
+    const doc = await db.collection('notifications').doc(id).get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+    res.json({ id: doc.id, ...doc.data() });
+  } catch (error) {
+    console.error('Error fetching notification:', error);
+    res.status(500).json({ error: 'Failed to fetch notification' });
+  }
+});
+
+// UPDATE notification
+app.put('/api/notifications/:id', AuthService.authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, message, image, targetUsers, sendDate, mode } = req.body;
+    
+    if (!title || !message) {
+      return res.status(400).json({ error: 'Title and message are required' });
+    }
+
+    if (!firebaseInitialized || !db) {
+      throw new Error('Firebase not initialized');
+    }
+
+    const updateData = {
+      title,
+      message,
+      image: image || '',
+      targetUsers: targetUsers || 'all',
+      sendDate: sendDate || new Date().toISOString().split('T')[0],
+      mode: mode || 'manual',
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.collection('notifications').doc(id).update(updateData);
+    res.json({ success: true, id, ...updateData });
+  } catch (error) {
+    console.error('Error updating notification:', error);
+    res.status(500).json({ error: 'Failed to update notification' });
+  }
+});
+
 // ==================== SERVE HTML PAGES ====================
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
