@@ -25,7 +25,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://your-vercel-domain.vercel.app'],
+  origin: ['http://localhost:3000', 'https://whats-app-send-message-web.vercel.app'],
   credentials: true
 }));
 
