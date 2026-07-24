@@ -1,6 +1,5 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -24,35 +23,36 @@ app.use(helmet({
   }
 }));
 
-app.use(cors({
-  origin: ['http://localhost:3000', 'https://whats-app-send-message-web.vercel.app'],
-  credentials: true
-}));
-
+app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Rate limiting
+// ==================== RATE LIMITING ====================
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  windowMs: 15 * 60 * 1000,
+  max: 100
 });
+app.use('/api/', limiter);
 
 // ==================== FIREBASE INITIALIZATION ====================
 let firebaseInitialized = false;
+let db = null;
+
 try {
-  const firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
-  admin.initializeApp({
-    credential: admin.credential.cert(firebaseConfig)
-  });
-  firebaseInitialized = true;
-  console.log('✅ Firebase initialized successfully');
+  if (process.env.FIREBASE_CONFIG) {
+    const firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
+    admin.initializeApp({
+      credential: admin.credential.cert(firebaseConfig)
+    });
+    firebaseInitialized = true;
+    db = admin.firestore();
+    console.log('✅ Firebase initialized successfully');
+  } else {
+    console.log('⚠️ FIREBASE_CONFIG not found, running in demo mode');
+  }
 } catch (error) {
   console.error('❌ Firebase initialization failed:', error.message);
 }
-
-const db = admin.firestore();
 
 // ==================== AUTH SERVICE ====================
 class AuthService {
@@ -60,23 +60,22 @@ class AuthService {
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';
     const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
     
-    if (username === adminUsername && password === adminPassword) {
-      return true;
-    }
-    return false;
+    return username === adminUsername && password === adminPassword;
   }
 
   static generateToken(username) {
+    const secret = process.env.JWT_SECRET || 'default-secret-key-change-this';
     return jwt.sign(
       { username, role: 'admin' },
-      process.env.JWT_SECRET || 'default-secret-key',
+      secret,
       { expiresIn: '24h' }
     );
   }
 
   static verifyToken(token) {
     try {
-      return jwt.verify(token, process.env.JWT_SECRET || 'default-secret-key');
+      const secret = process.env.JWT_SECRET || 'default-secret-key-change-this';
+      return jwt.verify(token, secret);
     } catch (error) {
       return null;
     }
@@ -105,7 +104,7 @@ class AuthService {
 class UserService {
   static async getAllUsers() {
     try {
-      if (!firebaseInitialized) {
+      if (!firebaseInitialized || !db) {
         return { users: [], total: 0, activeDevices: 0 };
       }
       
@@ -127,24 +126,13 @@ class UserService {
       return { users: [], total: 0, activeDevices: 0 };
     }
   }
-
-  static async getUserById(userId) {
-    try {
-      const doc = await db.collection('users').doc(userId).get();
-      if (!doc.exists) return null;
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-      console.error('Error fetching user:', error);
-      return null;
-    }
-  }
 }
 
 // ==================== NOTIFICATION SERVICE ====================
 class NotificationService {
   static async getAllNotifications() {
     try {
-      if (!firebaseInitialized) {
+      if (!firebaseInitialized || !db) {
         return { notifications: [], total: 0, scheduled: 0, sent: 0, pending: 0 };
       }
       
@@ -179,7 +167,7 @@ class NotificationService {
 
   static async createNotification(notificationData) {
     try {
-      if (!firebaseInitialized) {
+      if (!firebaseInitialized || !db) {
         throw new Error('Firebase not initialized');
       }
 
@@ -206,7 +194,7 @@ class NotificationService {
 
   static async sendNotification(notificationId) {
     try {
-      if (!firebaseInitialized) {
+      if (!firebaseInitialized || !db) {
         throw new Error('Firebase not initialized');
       }
 
@@ -215,23 +203,14 @@ class NotificationService {
       
       const notification = doc.data();
       
-      // Get target users
       let users = [];
       if (notification.targetUsers === 'all') {
         const userSnapshot = await db.collection('users').get();
         userSnapshot.forEach(doc => {
           users.push({ id: doc.id, ...doc.data() });
         });
-      } else {
-        // Get specific users
-        const userIds = notification.targetUsers.split(',');
-        for (const userId of userIds) {
-          const user = await UserService.getUserById(userId.trim());
-          if (user) users.push(user);
-        }
       }
 
-      // Send push notifications
       const results = [];
       for (const user of users) {
         if (user.fcmToken) {
@@ -250,7 +229,6 @@ class NotificationService {
 
             const response = await admin.messaging().send(message);
             
-            // Log success
             await db.collection('notificationLogs').add({
               notificationId: notificationId,
               userId: user.id,
@@ -259,11 +237,10 @@ class NotificationService {
               fcmResponse: response
             });
 
-            results.push({ userId: user.id, status: 'sent', response });
+            results.push({ userId: user.id, status: 'sent' });
           } catch (error) {
             console.error(`Error sending to user ${user.id}:`, error);
             
-            // Log error
             await db.collection('notificationLogs').add({
               notificationId: notificationId,
               userId: user.id,
@@ -277,7 +254,6 @@ class NotificationService {
         }
       }
 
-      // Update notification status
       await db.collection('notifications').doc(notificationId).update({
         status: 'sent',
         sentAt: new Date().toISOString(),
@@ -288,28 +264,6 @@ class NotificationService {
     } catch (error) {
       console.error('Error sending notification:', error);
       throw error;
-    }
-  }
-
-  static async getNotificationLogs(notificationId) {
-    try {
-      if (!firebaseInitialized) {
-        return [];
-      }
-
-      const snapshot = await db.collection('notificationLogs')
-        .where('notificationId', '==', notificationId)
-        .get();
-      
-      const logs = [];
-      snapshot.forEach(doc => {
-        logs.push({ id: doc.id, ...doc.data() });
-      });
-      
-      return logs;
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-      return [];
     }
   }
 }
@@ -411,7 +365,6 @@ app.post('/api/notifications', AuthService.authenticate, async (req, res) => {
       mode
     });
 
-    // If manual mode, send immediately
     if (mode === 'manual') {
       await NotificationService.sendNotification(notification.id);
     }
@@ -434,24 +387,31 @@ app.post('/api/notifications/:id/send', AuthService.authenticate, async (req, re
   }
 });
 
-app.get('/api/notifications/:id/logs', AuthService.authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const logs = await NotificationService.getNotificationLogs(id);
-    res.json(logs);
-  } catch (error) {
-    console.error('Error fetching logs:', error);
-    res.status(500).json({ error: 'Failed to fetch logs' });
-  }
+// ==================== SERVE HTML PAGES ====================
+// Root redirect to login
+app.get('/', (req, res) => {
+  res.redirect('/login');
 });
 
-// ==================== SERVE HTML ====================
-app.get('/', (req, res) => {
+// Serve login page
+app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
+// Serve dashboard
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// ==================== 404 HANDLER ====================
+app.use((req, res) => {
+  if (req.accepts('html')) {
+    return res.redirect('/login');
+  }
+  res.status(404).json({ 
+    error: 'Not Found',
+    path: req.path
+  });
 });
 
 // ==================== ERROR HANDLING ====================
@@ -463,8 +423,8 @@ app.use((err, req, res, next) => {
 // ==================== START SERVER ====================
 app.listen(PORT, () => {
   console.log(`🚀 Admin Dashboard running on port ${PORT}`);
-  console.log(`📊 Access dashboard at http://localhost:${PORT}/dashboard`);
-  console.log(`🔐 Login at http://localhost:${PORT}/login.html`);
+  console.log(`🔐 Login at http://localhost:${PORT}/login`);
+  console.log(`📊 Dashboard at http://localhost:${PORT}/dashboard`);
 });
 
 module.exports = app;
