@@ -23,7 +23,7 @@ app.use(helmet({
 }));
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ==================== FIREBASE INITIALIZATION ====================
@@ -162,11 +162,12 @@ const NotificationService = {
         throw new Error('Firebase not initialized');
       }
 
-      const { title, message, targetUsers, sendDate, mode } = notificationData;
+      const { title, message, image, targetUsers, sendDate, mode } = notificationData;
       
       const notification = {
         title,
         message,
+        image: image || '',
         targetUsers: targetUsers || 'all',
         sendDate: sendDate || new Date().toISOString().split('T')[0],
         mode: mode || 'manual',
@@ -342,7 +343,7 @@ app.get('/api/notifications', AuthService.authenticate, async (req, res) => {
 
 app.post('/api/notifications', AuthService.authenticate, async (req, res) => {
   try {
-    const { title, message, targetUsers, sendDate, mode } = req.body;
+    const { title, message, image, targetUsers, sendDate, mode } = req.body;
     
     if (!title || !message) {
       return res.status(400).json({ error: 'Title and message are required' });
@@ -351,6 +352,7 @@ app.post('/api/notifications', AuthService.authenticate, async (req, res) => {
     const notification = await NotificationService.createNotification({
       title,
       message,
+      image: image || '',
       targetUsers,
       sendDate,
       mode
@@ -440,6 +442,29 @@ app.put('/api/notifications/:id', AuthService.authenticate, async (req, res) => 
   } catch (error) {
     console.error('Error updating notification:', error);
     res.status(500).json({ error: 'Failed to update notification' });
+  }
+});
+
+// GET notification logs
+app.get('/api/notifications/:id/logs', AuthService.authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!firebaseInitialized || !db) {
+      throw new Error('Firebase not initialized');
+    }
+    const snapshot = await db.collection('notificationLogs')
+      .where('notificationId', '==', id)
+      .get();
+    
+    const logs = [];
+    snapshot.forEach(doc => {
+      logs.push({ id: doc.id, ...doc.data() });
+    });
+    
+    res.json(logs);
+  } catch (error) {
+    console.error('Error fetching logs:', error);
+    res.status(500).json({ error: 'Failed to fetch logs' });
   }
 });
 
