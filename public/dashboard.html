@@ -436,6 +436,15 @@
             background: var(--primary-dark);
         }
 
+        .btn-sm.success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-sm.success:hover {
+            background: #38a169;
+        }
+
         .btn-sm.danger {
             background: var(--danger);
             color: white;
@@ -443,6 +452,19 @@
 
         .btn-sm.danger:hover {
             background: #e53e3e;
+        }
+
+        .btn-sm.warning {
+            background: var(--warning);
+            color: white;
+        }
+
+        .btn-sm.warning:hover {
+            background: #d69e2e;
+        }
+
+        .btn-sm i {
+            margin-left: 4px;
         }
 
         /* ===== MODAL ===== */
@@ -527,6 +549,12 @@
             color: var(--gray-700);
         }
 
+        .modal .form-group label .optional {
+            color: var(--gray-600);
+            font-weight: 400;
+            font-size: 12px;
+        }
+
         .modal .form-group input,
         .modal .form-group textarea,
         .modal .form-group select {
@@ -550,6 +578,21 @@
         .modal .form-group textarea {
             resize: vertical;
             min-height: 80px;
+        }
+
+        .modal .form-group .image-preview {
+            width: 100%;
+            max-height: 150px;
+            object-fit: contain;
+            border-radius: 8px;
+            margin-top: 8px;
+            display: none;
+            border: 2px solid var(--gray-200);
+            padding: 5px;
+        }
+
+        .modal .form-group .image-preview.show {
+            display: block;
         }
 
         .modal .form-actions {
@@ -634,6 +677,10 @@
             .modal {
                 padding: 20px;
             }
+
+            .modal .form-actions {
+                flex-direction: column;
+            }
         }
 
         /* Scrollbar */
@@ -696,6 +743,16 @@
 
         .toast.info {
             background: var(--primary);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .btn-group .btn-sm {
+            white-space: nowrap;
         }
     </style>
 </head>
@@ -860,6 +917,7 @@
                     <table>
                         <thead>
                             <tr>
+                                <th>الصورة</th>
                                 <th>العنوان</th>
                                 <th>الرسالة</th>
                                 <th>الوضع</th>
@@ -870,7 +928,7 @@
                         </thead>
                         <tbody id="notificationsTable">
                             <tr>
-                                <td colspan="6" class="empty-state">
+                                <td colspan="7" class="empty-state">
                                     <i class="fas fa-bell-slash"></i>
                                     لا توجد إشعارات
                                 </td>
@@ -887,28 +945,41 @@
     <div class="modal-overlay" id="notificationModal">
         <div class="modal">
             <div class="modal-header">
-                <h3><i class="fas fa-plus-circle" style="color: var(--primary);"></i> إشعار جديد</h3>
+                <h3 id="modalTitle"><i class="fas fa-plus-circle" style="color: var(--primary);"></i> إشعار جديد</h3>
                 <button class="modal-close" onclick="closeModal('notificationModal')">&times;</button>
             </div>
             <form id="notificationForm">
+                <input type="hidden" id="editNotifId" value="">
+                
                 <div class="form-group">
-                    <label>عنوان الإشعار *</label>
+                    <label>عنوان الإشعار <span style="color: var(--danger);">*</span></label>
                     <input type="text" id="notifTitle" placeholder="أدخل عنوان الإشعار" required>
                 </div>
+                
                 <div class="form-group">
-                    <label>رسالة الإشعار *</label>
+                    <label>رسالة الإشعار <span style="color: var(--danger);">*</span></label>
                     <textarea id="notifMessage" placeholder="أدخل نص الإشعار" required></textarea>
                 </div>
+                
+                <div class="form-group">
+                    <label>صورة الإشعار <span class="optional">(اختياري)</span></label>
+                    <input type="url" id="notifImage" placeholder="https://example.com/image.jpg" onchange="previewImage(this.value)">
+                    <img id="imagePreview" class="image-preview" alt="معاينة الصورة">
+                    <small style="color: var(--gray-600); display: block; margin-top: 5px;">أدخل رابط صورة (اختياري)</small>
+                </div>
+                
                 <div class="form-group">
                     <label>المستخدمون المستهدفون</label>
                     <select id="notifTarget">
                         <option value="all">جميع المستخدمين</option>
                     </select>
                 </div>
+                
                 <div class="form-group">
                     <label>تاريخ الإرسال</label>
                     <input type="date" id="notifDate">
                 </div>
+                
                 <div class="form-group">
                     <label>طريقة الإرسال</label>
                     <select id="notifMode">
@@ -916,6 +987,7 @@
                         <option value="auto">تلقائي (جدولة)</option>
                     </select>
                 </div>
+                
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" onclick="closeModal('notificationModal')">إلغاء</button>
                     <button type="submit" class="btn-primary" id="submitNotifBtn">
@@ -966,7 +1038,7 @@
             if (response.status === 401) {
                 localStorage.removeItem('adminToken');
                 localStorage.removeItem('adminUsername');
-                window.location.href = '/login.html';
+                window.location.href = '/login';
                 throw new Error('Unauthorized');
             }
 
@@ -987,10 +1059,38 @@
         // ==================== MODAL ====================
         function openModal(id) {
             document.getElementById(id).classList.add('show');
+            document.body.style.overflow = 'hidden';
         }
 
         function closeModal(id) {
             document.getElementById(id).classList.remove('show');
+            document.body.style.overflow = 'auto';
+            // Reset form
+            document.getElementById('notificationForm').reset();
+            document.getElementById('editNotifId').value = '';
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-plus-circle" style="color: var(--primary);"></i> إشعار جديد';
+            document.getElementById('submitNotifText').textContent = 'إنشاء الإشعار';
+            document.getElementById('imagePreview').className = 'image-preview';
+            document.getElementById('imagePreview').src = '';
+        }
+
+        // Close modal on outside click
+        document.getElementById('notificationModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal('notificationModal');
+            }
+        });
+
+        // ==================== IMAGE PREVIEW ====================
+        function previewImage(url) {
+            const preview = document.getElementById('imagePreview');
+            if (url && url.trim() !== '') {
+                preview.src = url;
+                preview.className = 'image-preview show';
+            } else {
+                preview.className = 'image-preview';
+                preview.src = '';
+            }
         }
 
         // ==================== SIDEBAR ====================
@@ -998,7 +1098,6 @@
             document.getElementById('sidebar').classList.toggle('open');
         });
 
-        // Close sidebar on outside click (mobile)
         document.addEventListener('click', (e) => {
             const sidebar = document.getElementById('sidebar');
             const toggle = document.getElementById('menuToggle');
@@ -1025,12 +1124,10 @@
                 document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
                 document.getElementById(btn.dataset.tab).classList.add('active');
 
-                // Update sidebar active
                 document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.remove('active'));
                 const sidebarLink = document.querySelector(`.sidebar-nav a[data-tab="${btn.dataset.tab}"]`);
                 if (sidebarLink) sidebarLink.classList.add('active');
 
-                // Update page title
                 const titles = {
                     'dashboard-tab': { title: 'لوحة التحكم', sub: 'نظرة عامة على النظام' },
                     'users-tab': { title: 'المستخدمين', sub: 'إدارة مستخدمي التطبيق' },
@@ -1042,7 +1139,6 @@
             });
         });
 
-        // Sidebar navigation
         document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(a => {
             a.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -1067,7 +1163,6 @@
                 document.getElementById('sentNotifications').textContent = data.sentNotifications || 0;
                 document.getElementById('pendingNotifications').textContent = data.pendingNotifications || 0;
 
-                // Load recent notifications
                 await loadRecentNotifications();
             } catch (error) {
                 console.error('Error loading dashboard:', error);
@@ -1162,7 +1257,7 @@
                 if (notifications.length === 0) {
                     tbody.innerHTML = `
                         <tr>
-                            <td colspan="6" class="empty-state">
+                            <td colspan="7" class="empty-state">
                                 <i class="fas fa-bell-slash"></i>
                                 لا توجد إشعارات
                             </td>
@@ -1173,21 +1268,31 @@
 
                 tbody.innerHTML = notifications.map(n => `
                     <tr>
+                        <td>
+                            ${n.image ? `<img src="${escapeHtml(n.image)}" style="width:50px;height:50px;object-fit:cover;border-radius:8px;" onerror="this.style.display='none'">` : '-'}
+                        </td>
                         <td><strong>${escapeHtml(n.title)}</strong></td>
                         <td>${escapeHtml(n.message)}</td>
                         <td><span class="status-badge ${n.mode}">${n.mode === 'auto' ? 'تلقائي' : 'يدوي'}</span></td>
                         <td><span class="status-badge ${n.status}">${getStatusLabel(n.status)}</span></td>
                         <td>${formatDate(n.sendDate || n.createdAt)}</td>
                         <td>
-                            ${n.status === 'pending' ? `
-                                <button class="btn-sm primary" onclick="sendNotification('${n.id}')">
-                                    <i class="fas fa-paper-plane"></i> إرسال
+                            <div class="btn-group">
+                                ${n.status === 'pending' ? `
+                                    <button class="btn-sm primary" onclick="sendNotification('${n.id}')">
+                                        <i class="fas fa-paper-plane"></i> إرسال
+                                    </button>
+                                ` : ''}
+                                <button class="btn-sm warning" onclick="editNotification('${n.id}')">
+                                    <i class="fas fa-edit"></i> تعديل
                                 </button>
-                            ` : `
+                                <button class="btn-sm danger" onclick="deleteNotification('${n.id}')">
+                                    <i class="fas fa-trash"></i> مسح
+                                </button>
                                 <button class="btn-sm primary" onclick="viewLogs('${n.id}')">
                                     <i class="fas fa-list"></i> سجلات
                                 </button>
-                            `}
+                            </div>
                         </td>
                     </tr>
                 `).join('');
@@ -1219,6 +1324,63 @@
             }
         }
 
+        // ==================== DELETE NOTIFICATION ====================
+        async function deleteNotification(id) {
+            if (!confirm('⚠️ هل أنت متأكد من حذف هذا الإشعار؟ لا يمكن التراجع عن هذا الإجراء!')) return;
+
+            try {
+                showToast('جاري حذف الإشعار...', 'info');
+
+                const response = await apiCall(`/api/notifications/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) throw new Error('Failed to delete');
+
+                showToast('تم حذف الإشعار بنجاح', 'success');
+                await loadNotifications();
+                await loadDashboard();
+                await loadRecentNotifications();
+            } catch (error) {
+                console.error('Error deleting notification:', error);
+                showToast('فشل حذف الإشعار', 'error');
+            }
+        }
+
+        // ==================== EDIT NOTIFICATION ====================
+        async function editNotification(id) {
+            try {
+                const response = await apiCall(`/api/notifications/${id}`);
+                if (!response.ok) throw new Error('Failed to fetch notification');
+                const notification = await response.json();
+
+                // Fill form with notification data
+                document.getElementById('editNotifId').value = id;
+                document.getElementById('notifTitle').value = notification.title || '';
+                document.getElementById('notifMessage').value = notification.message || '';
+                document.getElementById('notifImage').value = notification.image || '';
+                document.getElementById('notifTarget').value = notification.targetUsers || 'all';
+                document.getElementById('notifDate').value = notification.sendDate || new Date().toISOString().split('T')[0];
+                document.getElementById('notifMode').value = notification.mode || 'manual';
+
+                // Preview image if exists
+                if (notification.image) {
+                    previewImage(notification.image);
+                }
+
+                // Change modal title and button
+                document.getElementById('modalTitle').innerHTML = '<i class="fas fa-edit" style="color: var(--warning);"></i> تعديل الإشعار';
+                document.getElementById('submitNotifText').textContent = 'تحديث الإشعار';
+
+                // Open modal
+                openModal('notificationModal');
+            } catch (error) {
+                console.error('Error loading notification for edit:', error);
+                showToast('فشل تحميل بيانات الإشعار', 'error');
+            }
+        }
+
+        // ==================== VIEW LOGS ====================
         async function viewLogs(id) {
             try {
                 const response = await apiCall(`/api/notifications/${id}/logs`);
@@ -1234,32 +1396,38 @@
                     `- المستخدم: ${log.userId || 'غير معروف'} | الحالة: ${log.status} | ${log.sentAt ? new Date(log.sentAt).toLocaleString('ar-SA') : ''}`
                 ).join('\n');
 
-                alert(`سجلات الإشعار:\n\n${logMessage}`);
+                alert(`📋 سجلات الإشعار:\n\n${logMessage}`);
             } catch (error) {
                 console.error('Error loading logs:', error);
                 showToast('فشل تحميل السجلات', 'error');
             }
         }
 
-        // ==================== CREATE NOTIFICATION ====================
+        // ==================== CREATE/UPDATE NOTIFICATION ====================
         document.getElementById('newNotificationBtn').addEventListener('click', () => {
-            openModal('notificationModal');
+            // Reset form for new notification
             document.getElementById('notificationForm').reset();
+            document.getElementById('editNotifId').value = '';
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-plus-circle" style="color: var(--primary);"></i> إشعار جديد';
+            document.getElementById('submitNotifText').textContent = 'إنشاء الإشعار';
+            document.getElementById('imagePreview').className = 'image-preview';
+            document.getElementById('imagePreview').src = '';
             document.getElementById('notifDate').value = new Date().toISOString().split('T')[0];
+            openModal('notificationModal');
         });
 
         document.getElementById('newNotificationBtn2').addEventListener('click', () => {
             document.querySelector('.tab-btn[data-tab="notifications-tab"]').click();
-            openModal('notificationModal');
-            document.getElementById('notificationForm').reset();
-            document.getElementById('notifDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('newNotificationBtn').click();
         });
 
         document.getElementById('notificationForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const id = document.getElementById('editNotifId').value;
             const title = document.getElementById('notifTitle').value.trim();
             const message = document.getElementById('notifMessage').value.trim();
+            const image = document.getElementById('notifImage').value.trim();
             const targetUsers = document.getElementById('notifTarget').value;
             const sendDate = document.getElementById('notifDate').value;
             const mode = document.getElementById('notifMode').value;
@@ -1274,38 +1442,42 @@
             const spinner = document.getElementById('submitNotifSpinner');
 
             btn.disabled = true;
-            text.textContent = 'جاري الإنشاء...';
+            text.textContent = id ? 'جاري التحديث...' : 'جاري الإنشاء...';
             spinner.style.display = 'inline';
 
             try {
-                const response = await apiCall('/api/notifications', {
-                    method: 'POST',
+                const method = id ? 'PUT' : 'POST';
+                const endpoint = id ? `/api/notifications/${id}` : '/api/notifications';
+                
+                const response = await apiCall(endpoint, {
+                    method: method,
                     body: JSON.stringify({
                         title,
                         message,
+                        image: image || '',
                         targetUsers,
                         sendDate: sendDate || new Date().toISOString().split('T')[0],
                         mode
                     })
                 });
 
-                if (!response.ok) throw new Error('Failed to create');
+                if (!response.ok) throw new Error('Failed to save');
 
-                showToast('تم إنشاء الإشعار بنجاح', 'success');
+                showToast(id ? 'تم تحديث الإشعار بنجاح' : 'تم إنشاء الإشعار بنجاح', 'success');
                 closeModal('notificationModal');
                 await loadNotifications();
                 await loadDashboard();
+                await loadRecentNotifications();
 
-                // If manual mode, refresh to show updated status
-                if (mode === 'manual') {
+                if (mode === 'manual' && !id) {
                     setTimeout(() => loadNotifications(), 1000);
                 }
             } catch (error) {
-                console.error('Error creating notification:', error);
-                showToast('فشل إنشاء الإشعار', 'error');
+                console.error('Error saving notification:', error);
+                showToast(id ? 'فشل تحديث الإشعار' : 'فشل إنشاء الإشعار', 'error');
             } finally {
                 btn.disabled = false;
-                text.textContent = 'إنشاء الإشعار';
+                text.textContent = id ? 'تحديث الإشعار' : 'إنشاء الإشعار';
                 spinner.style.display = 'none';
             }
         });
@@ -1348,23 +1520,18 @@
         (async function init() {
             if (!checkAuth()) return;
 
-            // Set admin name
             const username = localStorage.getItem('adminUsername') || 'المدير';
             document.getElementById('adminName').textContent = username;
             document.getElementById('adminAvatar').textContent = username.charAt(0).toUpperCase();
 
-            // Set default date in modal
             document.getElementById('notifDate').value = new Date().toISOString().split('T')[0];
 
-            // Load all data
             await loadDashboard();
             await loadUsers();
             await loadNotifications();
 
-            // Auto-refresh every 30 seconds
             setInterval(() => {
                 loadDashboard();
-                // Only refresh visible tab data
                 const activeTab = document.querySelector('.tab-content.active');
                 if (activeTab) {
                     const id = activeTab.id;
@@ -1381,7 +1548,7 @@
             }
             if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
                 e.preventDefault();
-                openModal('notificationModal');
+                document.getElementById('newNotificationBtn').click();
             }
         });
     </script>
